@@ -85,8 +85,6 @@ def prepare_accessBindings_service(entity_type:str, roles:list[str], operation_t
     # Preparing the service based on operation_type
     if operation_type == 'create':
         service = service.create
-    elif operation_type == 'delete':
-        service = service.delete
     elif operation_type == 'update':
         service = service.patch
     elif operation_type == 'list':
@@ -94,7 +92,7 @@ def prepare_accessBindings_service(entity_type:str, roles:list[str], operation_t
 
     return service, resource_name
 
-def create_new_user_access(entity_type:str, entity_id:str, email:str, roles:list[str]) -> dict:
+def create_user_access(entity_type:str, entity_id:str, email:str, roles:list[str]) -> dict:
     """Creates a new user access binding for a specified entity.
 
     This function prepares the necessary service object and resource name, then creates a new access binding
@@ -123,7 +121,7 @@ def create_new_user_access(entity_type:str, entity_id:str, email:str, roles:list
 
     return response
 
-def get_user_access_by_email(entity_type:str, entity_id:str, email:str) -> dict:
+def get_user_access_by_email(entity_type:str, entity_id:str, email:str) -> dict | bool:
     """Retrieves the access binding for a specific user on a given entity.
 
     This function lists all access bindings for the specified entity and filters them to find the one associated with the given email address.
@@ -145,10 +143,10 @@ def get_user_access_by_email(entity_type:str, entity_id:str, email:str) -> dict:
         parent=f"{resource_name}/{entity_id}",
     ).execute()
 
-    return next((accessBinding for accessBinding in response['accessBindings'] if accessBinding['user']==email))
+    return next((accessBinding for accessBinding in response['accessBindings'] if accessBinding['user'] == email), False)
 
-def update_user_access(entity_type:str, entity_id:str, email:str, roles:list[str]) -> dict:
-    """Updates a user's access to a specified entity.
+def update_user_access(entity_type:str, entity_id:str, userAccessBinding:str, roles:list[str]) -> dict:
+    """Updates a user's access to a specified entity, knowing the user's email address.
 
     This function retrieves the existing access binding for the given user and entity,
     then updates the roles associated with that binding.
@@ -156,7 +154,7 @@ def update_user_access(entity_type:str, entity_id:str, email:str, roles:list[str
     Args:
         entity_type (str): The type of entity (e.g., 'account', 'property').
         entity_id (str): The ID of the entity.
-        email (str): The email address of the user to update access for.
+        userAccessBinding (dict): The access binding information for the user.
         roles (list[str]): A list of roles to assign to the user.
 
     Returns:
@@ -165,20 +163,20 @@ def update_user_access(entity_type:str, entity_id:str, email:str, roles:list[str
     Raises:
         Exception: If there's an error retrieving the access binding, preparing the service, or executing the API call.
     """
-    accessBinding = get_user_access_by_email(entity_type, entity_id, email)
+    
     operation, _ = prepare_accessBindings_service(entity_type, roles, 'update')
     response = operation(
-        name=accessBinding['name'],
+        name=userAccessBinding['name'],
         body={
-            "name": accessBinding['name'],
+            "name": userAccessBinding['name'],
             "roles": roles,
-            "user": email
+            "user": userAccessBinding['user']
         }
     ).execute()
 
     return response
 
-def delete_user_access(entity_type:str, entity_id:str, email:str) -> dict:
+def delete_user_access(entity_type:str, entity_id:str, userAccessBinding:dict) -> dict:
     """Deletes a user's access to a specified entity.
 
     This function updates the access binding for the given entity, removing the specified user's roles.
@@ -187,7 +185,7 @@ def delete_user_access(entity_type:str, entity_id:str, email:str) -> dict:
     Args:
         entity_type (str): The type of entity (e.g., 'account', 'property').
         entity_id (str): The ID of the entity.
-        email (str): The email address of the user to remove access for.
+        userAccessBinding (dict): The access binding information for the user.
 
     Returns:
         dict: The API response from the Google Analytics 4 Admin API call.
@@ -195,4 +193,31 @@ def delete_user_access(entity_type:str, entity_id:str, email:str) -> dict:
     Raises:
         Exception: If there's an error preparing the service or executing the API call.
     """
-    return update_user_access(entity_type, entity_id, email, [])
+    return update_user_access(entity_type, entity_id, userAccessBinding, [])
+
+
+def add_or_update_user_access(entity_type:str, entity_id:str, email:str, roles:list[str]) -> dict:
+    """Adds or updates a user's access to a specified entity.
+
+    This function first checks if the user already has an access binding. If they do, it updates the existing binding with the new roles.
+    Otherwise, it creates a new access binding for the user.
+
+    Args:
+        entity_type (str): The type of entity (e.g., 'account', 'property').
+        entity_id (str): The ID of the entity.
+        email (str): The email address of the user to add or update access for.
+        roles (list[str]): A list of roles to assign or update for the user.
+
+    Returns:
+        dict: The API response from the Google Cloud API call.
+
+    Raises:
+        Exception: If there's an error retrieving the access binding, preparing the service, or executing the API call.
+    """
+    userAccessBinding = get_user_access_by_email(entity_type, entity_id, email)
+    if userAccessBinding:
+        response = update_user_access(entity_type, entity_id, email, roles)
+    else:
+        response = create_user_access(entity_type, entity_id, email, roles)
+
+    return response
