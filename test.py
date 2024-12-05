@@ -115,7 +115,7 @@ def create_user_access(entity_type:str, entity_id:str, email:str, roles:list[str
         parent=f"{resource_name}/{entity_id}",
         body={
             "roles": roles,
-            "user":email
+            "user": email
         }
     ).execute()
 
@@ -221,3 +221,32 @@ def add_or_update_user_access(entity_type:str, entity_id:str, email:str, roles:l
         response = create_user_access(entity_type, entity_id, email, roles)
 
     return response
+
+def get_property_entity_by_measurement_id(measurement_id:str) -> dict:
+    """Retrieves the Property entity for a given measurement ID in the Google Analytics 4 Admin API.
+   
+    Args:
+        measurement_id (str): The ID of the Google Analytics 4 data stream.
+
+    Returns:
+        dict: The properties entity if found, otherwise it returns an empty dictionary.
+
+    Raises:
+        Exception: If there's an error retrieving the properties entity or executing the API call.
+    """
+
+    creds = get_credentials(SERVICE_ACCOUNT_FILE, [
+        'https://www.googleapis.com/auth/analytics.readonly',
+        'https://www.googleapis.com/auth/analytics.edit'
+    ])
+    service = build(API_NAME, 'v1beta', credentials=creds)
+    
+    property_entity = next((
+        property_entity
+        for account_entity in service.accounts().list().execute()['accounts']
+        for property_entity in service.properties().list(filter=f'parent:{account_entity["name"]}').execute()['properties']
+        for data_stream_entity in service.properties().dataStreams().list(parent=property_entity["name"]).execute()['dataStreams']
+        if measurement_id == data_stream_entity.get('webStreamData',{}).get('measurementId', '')
+    ), {})
+
+    return property_entity
